@@ -1,32 +1,62 @@
-version: 2.1
+version: 2.0
+
 jobs:
-  build:
+  test:
+    parallelism: 2
     docker:
-      - image: cimg/openjdk:11.0.12
-
-    environment:
-      JVM_OPTS: -Xmx3200m
-
+      - image: cimg/openjdk:17.0.1
+        auth:
+          username: mydockerhub-user
+          password: $DOCKERHUB_PASSWORD  # context / project UI env-var reference
     steps:
       - checkout
-
-      - run: mvn clean build
-
+      - restore_cache:
+          keys:
+            - v1-dependencies-{{ checksum "pom.xml" }}
+            - v1-dependencies-
+      - attach_workspace:
+          at: ./target
+      - run: |
+            ./mvnw \
+            -Dtest=$(for file in $(circleci tests glob "src/test/**/**.java" \
+            | circleci tests split --split-by=timings); \
+            do basename $file \
+            | sed -e "s/.java/,/"; \
+            done | tr -d '\r\n') \
+            -e test verify
       - store_test_results:
-          path: build/test-results
-
+          path: target/surefire-reports
       - store_artifacts:
-          path: build/reports/tests/test
-          destination: test_result
+          path: target/site/jacoco/index.html
 
-      - store_artifacts:
-          path: build/reports/jacoco
-          destination: test_coverage
+  build:
+    docker:
+      - image: cimg/openjdk:17.0.1
+        auth:
+          username: mydockerhub-user
+          password: $DOCKERHUB_PASSWORD  # context / project UI env-var reference
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - v1-dependencies-{{ checksum "pom.xml" }}
+            - v1-dependencies-
+      - run: ./mvnw -Dmaven.test.skip=true package
+      - save_cache:
+          paths:
+            - ~/.m2
+          key: v1-dependencies-{{ checksum "pom.xml" }}
+      - persist_to_workspace:
+         root: ./
+         paths:
+           - target/
 
-      - store_artifacts:
-          path: build/reports/pmd
-          destination: pmd
+workflows:
+  version: 2
 
-      - store_artifacts:
-          path: build/reports/checkstyle
-          destination: checkstyle
+  build-then-test:
+    jobs:
+      - build
+      - test:
+          requires:
+            - build
