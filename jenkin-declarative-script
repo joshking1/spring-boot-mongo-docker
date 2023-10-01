@@ -1,0 +1,46 @@
+pipeline {
+    agent any
+    
+    stages {
+        stage("Git Clone") {
+            steps {
+                script {
+                    git branch: 'main', credentialsId: 'GIT_HUB_CREDENTIALS', url: 'https://github.com/batokenms/spring-boot-mongo-docker.git'
+                }
+            }
+        }
+        stage('Maven Clean Build') {
+            steps {
+                script {
+                    def mavenHome = tool name: "Maven-3.8.6", type: "maven"
+                    def mavenCMD = "${mavenHome}/bin/mvn"
+                    sh "${mavenCMD} clean package"
+                    
+                }
+            }
+        }
+        stage("Build Docker Image") {
+            steps {
+                sh "docker version"
+                sh "docker build -t king-httpd ."
+            }
+        }
+        stage("Docker Image Tag") {
+            steps {
+                sh "docker tag king-httpd jeanp12/king-httpd:king-httpd"
+            }
+        }
+        stage("Docker Login to Hub Docker") {
+            steps {
+                withCredentials([string(credentialsId: 'DOCKER_HUB_PASSWORD', variable: 'PASSWORD')]) {
+                    sh 'docker login -u jeanp12 -p $PASSWORD'
+                }
+            }
+        }
+        stage("Docker Image Push") {
+            steps {
+                sh "docker push jeanp12/king-httpd:king-httpd"
+            }
+        }
+    }
+}
